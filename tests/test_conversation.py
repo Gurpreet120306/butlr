@@ -1,5 +1,7 @@
-
 import unittest
+import tempfile
+
+from pathlib import Path
 
 from app.assistant.models import Message
 from app.assistant.conversation import ConversationManager
@@ -8,7 +10,15 @@ from app.assistant.conversation import ConversationManager
 class TestConversationManager(unittest.TestCase):
 
     def setUp(self):
-        self.manager = ConversationManager()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+
+        self.db_path = Path(self.temp_dir.name) / "test.db"
+
+        self.manager = ConversationManager(
+            db_path=self.db_path
+        )
+
         self.conversation_id = self.manager.create_conversation()
 
     def test_create_conversation(self):
@@ -18,7 +28,7 @@ class TestConversationManager(unittest.TestCase):
         message = self.manager.add_message(
             self.conversation_id,
             "user",
-            "Hello BUTL-R!"
+            "Hello BUTL-R!",
         )
 
         self.assertEqual(message.role, "user")
@@ -28,10 +38,12 @@ class TestConversationManager(unittest.TestCase):
         self.manager.add_message(
             self.conversation_id,
             "user",
-            "Hello"
+            "Hello",
         )
 
-        messages = self.manager.get_messages(self.conversation_id)
+        messages = self.manager.get_messages(
+            self.conversation_id
+        )
 
         self.assertEqual(len(messages), 1)
 
@@ -41,12 +53,12 @@ class TestConversationManager(unittest.TestCase):
         self.manager.add_message(
             self.conversation_id,
             "user",
-            "First conversation"
+            "First conversation",
         )
 
         self.assertEqual(
             len(self.manager.get_messages(second_id)),
-            0
+            0,
         )
 
     def test_invalid_message_role(self):
@@ -61,7 +73,78 @@ class TestConversationManager(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.manager.get_messages("unknown-id")
 
+    def test_conversation_survives_restart(self):
+
+        self.manager.add_message(
+            self.conversation_id,
+            "user",
+            "My name is Gurpreet.",
+        )
+
+        # Simulate restarting BUTL-R by creating
+        # another manager using the same database.
+        restarted_manager = ConversationManager(
+            db_path=self.db_path
+        )
+
+        messages = restarted_manager.get_messages(
+            self.conversation_id
+        )
+
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(
+            messages[0].content,
+            "My name is Gurpreet.",
+        )
+
+    def test_delete_conversation_removes_messages(self):
+
+        self.manager.add_message(
+            self.conversation_id,
+            "user",
+            "This message should be deleted.",
+        )
+
+        self.manager.delete_conversation(
+            self.conversation_id
+        )
+
+        with self.assertRaises(KeyError):
+            self.manager.get_messages(
+                self.conversation_id
+            )
+
+    def test_message_order_survives_restart(self):
+
+        self.manager.add_message(
+            self.conversation_id,
+            "user",
+            "First message",
+        )
+
+        self.manager.add_message(
+            self.conversation_id,
+            "assistant",
+            "Second message",
+        )
+
+        restarted_manager = ConversationManager(
+            db_path=self.db_path
+        )
+
+        messages = restarted_manager.get_messages(
+            self.conversation_id
+        )
+
+        self.assertEqual(
+            messages[0].content,
+            "First message",
+        )
+
+        self.assertEqual(
+            messages[1].content,
+            "Second message",
+        )
 
 if __name__ == "__main__":
     unittest.main()
-
