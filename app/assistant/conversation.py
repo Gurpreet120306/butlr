@@ -1,169 +1,107 @@
-import sqlite3
-from contextlib import closing
-from pathlib import Path
-from uuid import uuid4
+
 from datetime import datetime, timezone
+from uuid import uuid4
+
+from pymongo import ReturnDocument
 
 from app.assistant.models import Message
-from app.core.config import settings
+from app.core.database import mongodb
 
 
 class ConversationManager:
-    """Manages conversations and stores them permanently in SQLite."""
+    """Manages conversations using MongoDB."""
 
-    def __init__(self, db_path=None):
+    def __init__(self, database=None):
+        # Use an injected database for testing,
+        # otherwise use BUTL-R's main database.
+        if database is None:
+            database = mongodb.connect()
 
-        if db_path is None:
-            settings.initialize_directories()
-            self.db_path = settings.DATA_DIR / "butlr.db"
-        else:
-            self.db_path = Path(db_path)
-            self.db_path.parent.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
+        self.database = database
 
-        self._initialize_database()
-
-    def _connect(self):
-        connection = sqlite3.connect(self.db_path)
-        connection.execute("PRAGMA foreign_keys = ON")
-        return connection
-
-    def _initialize_database(self):
-        """Create the database tables if they do not exist."""
-
-        with closing(self._connect()) as connection:
-            with connection:
-                connection.execute("""
-                    CREATE TABLE IF NOT EXISTS conversations (
-                        conversation_id TEXT PRIMARY KEY,
-                        created_at TEXT NOT NULL
-                    )
-                """)
-
-                connection.execute("""
-                    CREATE TABLE IF NOT EXISTS messages (
-                        message_id TEXT PRIMARY KEY,
-                        conversation_id TEXT NOT NULL,
-                        role TEXT NOT NULL,
-                        content TEXT NOT NULL,
-                        timestamp TEXT NOT NULL,
-
-                        FOREIGN KEY (conversation_id)
-                        REFERENCES conversations(conversation_id)
-                        ON DELETE CASCADE
-                    )
-                """)
+        self.conversations = database["conversations"]
+        self.messages = database["messages"]
 
     def create_conversation(self):
+        """Create and store a new conversation."""
+
         conversation_id = str(uuid4())
 
-        with closing(self._connect()) as connection:
-            with connection:
-                connection.execute(
-                    """
-                    INSERT INTO conversations (
-                        conversation_id,
-                        created_at
-                    )
-                    VALUES (?, ?)
-                    """,
-                    (
-                        conversation_id,
-                        datetime.now(timezone.utc).isoformat(),
-                    ),
-                )
+        self.conversations.insert_one({
+            "conversation_id": conversation_id,
+            "created_at": datetime.now(timezone.utc),
+            "message_count": 0,
+        })
 
         return conversation_id
 
     def add_message(self, conversation_id, role, content):
+        """Validate and store a message."""
 
         message = Message(
             role=role,
             content=content,
         )
 
-        with closing(self._connect()) as connection:
-            with connection:
-                conversation = connection.execute(
-                    """
-                    SELECT 1 FROM conversations
-                    WHERE conversation_id = ?
-                    """,
-                    (conversation_id,),
-                ).fetchone()
-
-                if conversation is None:
-                    raise KeyError("Conversation does not exist.")
-
-                connection.execute(
-                    """
-                    INSERT INTO messages (
-                        message_id,
-                        conversation_id,
-                        role,
-                        content,
-                        timestamp
-                    )
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        message.message_id,
-                        conversation_id,
-                        message.role,
-                        message.content,
-                        message.timestamp.isoformat(),
-                    ),
-                )
-
-        return message
-
-    def get_messages(self, conversation_id):
-
-        with closing(self._connect()) as connection:
-            rows = connection.execute(
-                """
-                SELECT message_id, role, content, timestamp
-                FROM messages
-                WHERE conversation_id = ?
-                ORDER BY rowid
-                """,
-                (conversation_id,),
-            ).fetchall()
-
-            conversation = connection.execute(
-                """
-                SELECT 1 FROM conversations
-                WHERE conversation_id = ?
-                """,
-                (conversation_id,),
-            ).fetchone()
+        # Atomically allocate a sequence number.
+        conversation = self.conversations.find_one_and_update(
+            {"conversation_id": conversation_id},
+            {"$inc": {"message_count": 1}},
+            return_document=ReturnDocument.AFTER,
+        )
 
         if conversation is None:
             raise KeyError("Conversation does not exist.")
 
+        self.messages.insert_one({
+            "message_id": message.message_id,
+            "conversation_id": conversation_id,
+            "sequence": conversation["message_count"],
+            "role": message.role,
+            "content": message.content,
+            "timestamp": message.timestamp,
+        })
+
+        return message
+
+    def get_messages(self, conversation_id):
+        """Retrieve messages in their original order."""
+
+        conversation = self.conversations.find_one(
+            {"conversation_id": conversation_id}
+        )
+
+        if conversation is None:
+            raise KeyError("Conversation does not exist.")
+
+        documents = self.messages.find(
+            {"conversation_id": conversation_id}
+        ).sort("sequence", 1)
+
         return [
             Message(
-                message_id=row[0],
-                role=row[1],
-                content=row[2],
-                timestamp=datetime.fromisoformat(row[3]),
+                message_id=document["message_id"],
+                role=document["role"],
+                content=document["content"],
+                timestamp=document["timestamp"],
             )
-            for row in rows
+            for document in documents
         ]
 
     def delete_conversation(self, conversation_id):
+        """Delete a conversation and its messages."""
 
-        with closing(self._connect()) as connection:
-            with connection:
-                cursor = connection.execute(
-                    """
-                    DELETE FROM conversations
-                    WHERE conversation_id = ?
-                    """,
-                    (conversation_id,),
-                )
+        conversation = self.conversations.find_one(
+            {"conversation_id": conversation_id}
+        )
 
-                if cursor.rowcount == 0:
-                    raise KeyError("Conversation does not exist.")
+        if conversation is None:
+            raise KeyError("Conversation does not exist.")
+
+        self.messages.delete_many({
+            "conversation_id": conversation_id
+        })
+
+        self.conversations.delete_one({
+            "conversation_id": conversation_id
+        })

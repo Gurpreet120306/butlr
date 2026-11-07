@@ -1,9 +1,5 @@
-
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
-
-from app.core.config import settings
-
 
 class MongoDB:
     """Manages BUTL-R's MongoDB connection."""
@@ -13,18 +9,18 @@ class MongoDB:
         self.database = None
 
     def connect(self):
-        """Connect to the local MongoDB server."""
+        """Connect to MongoDB or reuse an existing connection."""
 
         try:
-            self.client = MongoClient(
-                "mongodb://localhost:27017/",
-                serverSelectionTimeoutMS=5000,
-            )
+            if self.client is None:
+                self.client = MongoClient(
+                    "mongodb://localhost:27017/",
+                    serverSelectionTimeoutMS=5000,
+                    tz_aware=True,
+                )
 
-            # Verify that MongoDB is reachable.
             self.client.admin.command("ping")
 
-            # Select BUTL-R's database.
             self.database = self.client["butlr"]
 
             print("BUTL-R MongoDB connection successful!")
@@ -46,5 +42,4 @@ class MongoDB:
             print("MongoDB connection closed.")
 
 
-# Shared database manager for BUTL-R.
 mongodb = MongoDB()

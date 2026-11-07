@@ -1,7 +1,8 @@
-import unittest
-import tempfile
 
-from pathlib import Path
+import unittest
+from uuid import uuid4
+
+from pymongo import MongoClient
 
 from app.assistant.models import Message
 from app.assistant.conversation import ConversationManager
@@ -10,16 +11,29 @@ from app.assistant.conversation import ConversationManager
 class TestConversationManager(unittest.TestCase):
 
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-
-        self.db_path = Path(self.temp_dir.name) / "test.db"
-
-        self.manager = ConversationManager(
-            db_path=self.db_path
+        # Give every test its own temporary database.
+        self.client = MongoClient(
+            "mongodb://localhost:27017/",
+            serverSelectionTimeoutMS=5000,
+            tz_aware=True,
         )
 
-        self.conversation_id = self.manager.create_conversation()
+        self.database_name = f"butlr_test_{uuid4().hex}"
+
+        self.database = self.client[self.database_name]
+
+        self.manager = ConversationManager(
+            database=self.database
+        )
+
+        self.conversation_id = (
+            self.manager.create_conversation()
+        )
+
+    def tearDown(self):
+        # Delete only this test's database.
+        self.client.drop_database(self.database_name)
+        self.client.close()
 
     def test_create_conversation(self):
         self.assertIsNotNone(self.conversation_id)
@@ -74,17 +88,14 @@ class TestConversationManager(unittest.TestCase):
             self.manager.get_messages("unknown-id")
 
     def test_conversation_survives_restart(self):
-
         self.manager.add_message(
             self.conversation_id,
             "user",
             "My name is Gurpreet.",
         )
 
-        # Simulate restarting BUTL-R by creating
-        # another manager using the same database.
         restarted_manager = ConversationManager(
-            db_path=self.db_path
+            database=self.database
         )
 
         messages = restarted_manager.get_messages(
@@ -98,7 +109,6 @@ class TestConversationManager(unittest.TestCase):
         )
 
     def test_delete_conversation_removes_messages(self):
-
         self.manager.add_message(
             self.conversation_id,
             "user",
@@ -114,8 +124,13 @@ class TestConversationManager(unittest.TestCase):
                 self.conversation_id
             )
 
-    def test_message_order_survives_restart(self):
+        remaining = self.database.messages.count_documents(
+            {"conversation_id": self.conversation_id}
+        )
 
+        self.assertEqual(remaining, 0)
+
+    def test_message_order_survives_restart(self):
         self.manager.add_message(
             self.conversation_id,
             "user",
@@ -129,22 +144,23 @@ class TestConversationManager(unittest.TestCase):
         )
 
         restarted_manager = ConversationManager(
-            db_path=self.db_path
+            database=self.database
         )
 
         messages = restarted_manager.get_messages(
             self.conversation_id
         )
 
+        self.assertEqual(len(messages), 2)
         self.assertEqual(
             messages[0].content,
             "First message",
         )
-
         self.assertEqual(
             messages[1].content,
             "Second message",
         )
+
 
 if __name__ == "__main__":
     unittest.main()
