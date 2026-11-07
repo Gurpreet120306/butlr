@@ -1,1 +1,2 @@
-pymongo
+pymongo==4.19.0
+mongomock==4.3.0

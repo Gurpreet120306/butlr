@@ -23,6 +23,7 @@ def main():
     print("  fast     - Switch to Fast Mode")
     print("  quality  - Switch to Quality Mode")
     print("  mode     - Show current mode")
+    print("  new      - Start a new conversation")
     print("  exit     - End conversation\n")
 
     while True:
@@ -57,6 +58,11 @@ def main():
                 f"\nBUTL-R: Current mode is "
                 f"{assistant.get_mode().upper()}.\n"
             )
+            continue
+
+        if command == "new":
+            conversation_id = assistant.start_conversation()
+            print("\nBUTL-R: Started a new conversation.\n")
             continue
 
         try:
