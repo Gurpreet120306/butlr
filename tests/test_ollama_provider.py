@@ -63,7 +63,8 @@ class TestOllamaProvider(unittest.TestCase):
         payload = json.loads(request.data.decode("utf-8"))
 
         self.assertEqual(payload["model"], "gemma3:4b")
-        self.assertEqual(payload["messages"][0]["content"], "Hello BUTL-R!")
+        self.assertEqual(payload["messages"][0]["role"],"system",)
+        self.assertEqual(payload["messages"][1]["content"],"Hello BUTL-R!",)
         self.assertFalse(payload["stream"])
 
 

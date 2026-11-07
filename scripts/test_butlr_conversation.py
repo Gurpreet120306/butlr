@@ -1,3 +1,4 @@
+
 from app.assistant.engine import ButlrAssistant
 from app.assistant.ollama_provider import OllamaProvider
 
@@ -17,7 +18,12 @@ def main():
     conversation_id = assistant.start_conversation()
 
     print("\nBUTL-R is online!")
-    print("Type 'exit' to end the conversation.\n")
+    print("Current mode: QUALITY")
+    print("\nCommands:")
+    print("  fast     - Switch to Fast Mode")
+    print("  quality  - Switch to Quality Mode")
+    print("  mode     - Show current mode")
+    print("  exit     - End conversation\n")
 
     while True:
         user_input = input("YOU: ").strip()
@@ -28,6 +34,29 @@ def main():
 
         if not user_input:
             print("Please enter a message.")
+            continue
+
+        command = user_input.lower()
+
+        if command in {"fast", "quality"}:
+            try:
+                model = assistant.set_mode(command)
+
+                print(
+                    f"\nBUTL-R: Switched to "
+                    f"{command.upper()} MODE ({model}).\n"
+                )
+
+            except Exception as error:
+                print(f"\nBUTL-R ERROR: {error}\n")
+
+            continue
+
+        if command == "mode":
+            print(
+                f"\nBUTL-R: Current mode is "
+                f"{assistant.get_mode().upper()}.\n"
+            )
             continue
 
         try:
