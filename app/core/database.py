@@ -31,6 +31,28 @@ class MongoDB:
             print(f"MongoDB connection failed: {error}")
             raise
 
+    def is_healthy(self) -> bool:
+        """Check whether MongoDB connection is alive and responsive."""
+        if self.client is None:
+            return False
+        try:
+            self.client.admin.command("ping")
+            return True
+        except Exception:
+            return False
+
+    def reconnect(self, max_retries: int = 3):
+        """Force a fresh connection, closing any stale client."""
+        self.close()
+        for attempt in range(1, max_retries + 1):
+            try:
+                return self.connect()
+            except ConnectionFailure:
+                if attempt == max_retries:
+                    raise
+                import time
+                time.sleep(0.5 * attempt)
+
     def close(self):
         """Close the MongoDB connection."""
 

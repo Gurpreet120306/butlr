@@ -35,7 +35,7 @@ class TestMemoryCommandHandler(unittest.TestCase):
                 "preferences",
                 "favourite programming language",
             ),
-            "Python.",
+            "Python",
         )
 
         self.assertIn("remember", reply.lower())

@@ -115,6 +115,85 @@ class TestButlrAssistant(unittest.TestCase):
 
         self.assertEqual(result, "Python")
 
+
+    def test_memory_context_for_favourite_language(self):
+        self.assistant.remember(
+            "preferences",
+            "favourite programming language",
+            "Python",
+        )
+
+        context = self.assistant._get_memory_context(
+            "What is my favourite programming language?"
+        )
+
+        self.assertIn("Python", context)
+
+    def test_memory_context_partial_keyword_query(self):
+        self.assistant.remember(
+            "preferences",
+            "favourite programming language",
+            "Python",
+        )
+
+        context = self.assistant._get_memory_context(
+            "What is my favourite language?"
+        )
+
+        self.assertIn("Python", context)
+
+    def test_memory_context_broad_question(self):
+        self.assistant.remember(
+            "preferences",
+            "favourite programming language",
+            "Python",
+        )
+        self.assistant.remember(
+            "preferences",
+            "favourite food",
+            "Pizza",
+        )
+
+        context = self.assistant._get_memory_context(
+            "What do you know about me?"
+        )
+
+        self.assertIn("Python", context)
+        self.assertIn("Pizza", context)
+
+    def test_memory_context_filters_out_irrelevant_memories(self):
+        self.assistant.remember(
+            "preferences",
+            "favourite programming language",
+            "Python",
+        )
+        self.assistant.remember(
+            "preferences",
+            "favourite food",
+            "Pizza",
+        )
+
+        context = self.assistant._get_memory_context(
+            "What is my favourite programming language?"
+        )
+
+        self.assertIn("Python", context)
+        self.assertNotIn("Pizza", context)
+
+    def test_memory_context_for_unrelated_question(self):
+        self.assistant.remember(
+            "preferences",
+            "favourite programming language",
+            "Python",
+        )
+
+        context = self.assistant._get_memory_context(
+            "What is the weather today?"
+        )
+
+        self.assertEqual(context, "")
+
+
     def test_forget_information(self):
         self.assistant.remember(
             "preferences",
@@ -149,7 +228,7 @@ class TestButlrAssistant(unittest.TestCase):
                 "preferences",
                 "favourite programming language",
             ),
-            "Python.",
+            "Python",
         )
 
         history = self.assistant.get_history(

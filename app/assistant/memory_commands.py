@@ -55,8 +55,8 @@ class MemoryCommandHandler:
         )
 
         if match:
-            key = match.group(1).strip()
-            value = match.group(2).strip()
+            key = match.group(1).strip().rstrip(".!?")
+            value = match.group(2).strip().rstrip(".!?")
 
             try:
                 self.memory_manager.save_memory(
@@ -80,7 +80,7 @@ class MemoryCommandHandler:
         )
 
         if match:
-            key = match.group(1).strip().rstrip(".")
+            key = match.group(1).strip().rstrip(".!?")
 
             self.pending_forget[conversation_id] = (
                 "preferences",
